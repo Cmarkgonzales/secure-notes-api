@@ -4,20 +4,23 @@ import (
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+var (
+	DB         *gorm.DB
+	JWT_SECRET string
 )
 
 func LoadEnv() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("No .env file found")
-	}
+	JWT_SECRET = os.Getenv("JWT_SECRET")
 }
 
-func GetEnv(key string, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
+func ConnectDatabase() {
+	var err error
+	DB, err = gorm.Open(sqlite.Open("secure-notes.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
 	}
-	return value
 }

@@ -2,11 +2,9 @@ package controllers
 
 import (
 	"net/http"
-	"os"
-	"time"
-
 	"secure-notes-api/config"
 	"secure-notes-api/models"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -19,19 +17,17 @@ func hashPassword(password string) (string, error) {
 }
 
 func checkPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 func generateToken(userID uint) (string, error) {
-	secret := os.Getenv("JWT_SECRET")
 	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(),
+		"exp":     time.Now().Add(72 * time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	return token.SignedString([]byte(config.JWT_SECRET))
 }
 
 func Register(c *gin.Context) {
@@ -51,14 +47,9 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	user := models.User{
-		Username: input.Username,
-		Password: hashedPassword,
-	}
-
-	result := config.DB.Create(&user)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	user := models.User{Username: input.Username, Password: hashedPassword}
+	if err := config.DB.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -77,8 +68,7 @@ func Login(c *gin.Context) {
 	}
 
 	var user models.User
-	result := config.DB.Where("username = ?", input.Username).First(&user)
-	if result.Error != nil {
+	if err := config.DB.Where("username = ?", input.Username).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		return
 	}

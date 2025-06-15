@@ -2,18 +2,17 @@ package main
 
 import (
 	"secure-notes-api/config"
-	"secure-notes-api/routes"
-
-	"github.com/gin-gonic/gin"
+	"secure-notes-api/models"
+	"secure-notes-api/router"
+	"secure-notes-api/utils"
 )
 
 func main() {
 	config.LoadEnv()
+	utils.LoadEncryptionKey()
 	config.ConnectDatabase()
+	config.DB.AutoMigrate(&models.User{}, &models.Note{})
 
-	r := gin.Default()
-	routes.RegisterRoutes(r)
-
-	port := config.GetEnv("PORT", "8086")
-	r.Run(":" + port)
+	r := router.SetupRouter()
+	r.Run(":8086")
 }

@@ -4,49 +4,161 @@ import (
 	"net/http"
 	"secure-notes-api/config"
 	"secure-notes-api/models"
+	"secure-notes-api/utils"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
-// CreateNote handles POST /notes
-func CreateNote(c *gin.Context) {
-	userID := c.MustGet("user_id").(uint)
-
-	var input struct {
-		Title   string `json:"title" binding:"required"`
-		Content string `json:"content" binding:"required"`
+func extractUserId(c *gin.Context) (uint, bool) {
+	userIdInterface, exists := c.Get("userId")
+	if !exists {
+		return 0, false
 	}
+	userId, ok := userIdInterface.(uint)
+	return userId, ok
+}
 
-	if err := c.ShouldBindJSON(&input); err != nil {
+func CreateNote(c *gin.Context) {
+	var note models.Note
+	if err := c.ShouldBindJSON(&note); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	note := models.Note{
-		UserID:  userID,
-		Title:   input.Title,
-		Content: input.Content, // encryption can be applied here later
+	userId, ok := extractUserId(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		return
 	}
+	note.UserID = userId
 
-	result := config.DB.Create(&note)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	encryptedTitle, err := utils.Encrypt(note.Title)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		return
+	}
+	encryptedContent, err := utils.Encrypt(note.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"note": note})
+	note.Title = encryptedTitle
+	note.Content = encryptedContent
+
+	if err := config.DB.Create(&note).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, note)
 }
 
-// GetNotes handles GET /notes
 func GetNotes(c *gin.Context) {
-	userID := c.MustGet("user_id").(uint)
-
-	var notes []models.Note
-	result := config.DB.Where("user_id = ?", userID).Find(&notes)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	userId, ok := extractUserId(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"notes": notes})
+	search := c.Query("search")
+	var notes []models.Note
+	if err := config.DB.Where("user_id = ?", userId).Find(&notes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var decryptedNotes []models.Note
+	for _, note := range notes {
+		decryptedTitle, err1 := utils.Decrypt(note.Title)
+		decryptedContent, err2 := utils.Decrypt(note.Content)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		note.Title = decryptedTitle
+		note.Content = decryptedContent
+
+		if search == "" || utils.ContainsIgnoreCase(note.Title, search) || utils.ContainsIgnoreCase(note.Content, search) {
+			decryptedNotes = append(decryptedNotes, note)
+		}
+	}
+
+	c.JSON(http.StatusOK, decryptedNotes)
+}
+
+func UpdateNote(c *gin.Context) {
+	userId, ok := extractUserId(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		return
+	}
+
+	noteId := c.Param("id")
+	id, err := strconv.Atoi(noteId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	var existingNote models.Note
+	if err := config.DB.Where("id = ? AND user_id = ?", id, userId).First(&existingNote).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	var updatedNote models.Note
+	if err := c.ShouldBindJSON(&updatedNote); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	encryptedTitle, err := utils.Encrypt(updatedNote.Title)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		return
+	}
+	encryptedContent, err := utils.Encrypt(updatedNote.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		return
+	}
+
+	existingNote.Title = encryptedTitle
+	existingNote.Content = encryptedContent
+
+	if err := config.DB.Save(&existingNote).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, existingNote)
+}
+
+func DeleteNote(c *gin.Context) {
+	userId, ok := extractUserId(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		return
+	}
+
+	noteId := c.Param("id")
+	id, err := strconv.Atoi(noteId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	var note models.Note
+	if err := config.DB.Where("id = ? AND user_id = ?", id, userId).First(&note).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	if err := config.DB.Delete(&note).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Note deleted successfully"})
 }

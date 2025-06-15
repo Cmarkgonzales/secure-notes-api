@@ -1,0 +1,11 @@
+# Golang
+/bin/
+/vendor/
+*.log
+
+# Env files
+.env
+
+# Docker
+*.pid
+docker-compose.override.yml
