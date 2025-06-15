@@ -26,8 +26,10 @@ func loadEnv() {
 	// Use test-specific secrets
 	os.Setenv("JWT_SECRET", "test_secret_123456")
 	os.Setenv("ENCRYPTION_KEY", "jcXeHPAikPW3XmhpF++6/B5wacjH+3UHBc29ngFJAHc=")
-
 	log.Println("[TEST] Environment variables loaded")
+
+	utils.LoadEncryptionKey()
+	log.Println("[TEST] Encryption key loaded from environment")
 }
 
 func initTestDB() {
@@ -49,7 +51,6 @@ func initTestDB() {
 }
 
 func initRouter() {
-	utils.LoadEncryptionKey()
 	log.Println("[TEST] Encryption key loaded")
 	TestRouter = router.SetupRouter()
 	log.Println("[TEST] Router initialized")
