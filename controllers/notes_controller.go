@@ -22,25 +22,25 @@ func extractUserId(c *gin.Context) (uint, bool) {
 func CreateNote(c *gin.Context) {
 	var note models.Note
 	if err := c.ShouldBindJSON(&note); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	userId, ok := extractUserId(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		utils.RespondError(c, http.StatusUnauthorized, "User ID missing")
 		return
 	}
 	note.UserID = userId
 
 	encryptedTitle, err := utils.Encrypt(note.Title)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		utils.InternalError(c, err)
 		return
 	}
 	encryptedContent, err := utils.Encrypt(note.Content)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		utils.InternalError(c, err)
 		return
 	}
 
@@ -48,7 +48,7 @@ func CreateNote(c *gin.Context) {
 	note.Content = encryptedContent
 
 	if err := config.DB.Create(&note).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.InternalError(c, err)
 		return
 	}
 
@@ -58,14 +58,14 @@ func CreateNote(c *gin.Context) {
 func GetNotes(c *gin.Context) {
 	userId, ok := extractUserId(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		utils.RespondError(c, http.StatusUnauthorized, "User ID missing")
 		return
 	}
 
 	search := c.Query("search")
 	var notes []models.Note
 	if err := config.DB.Where("user_id = ?", userId).Find(&notes).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.InternalError(c, err)
 		return
 	}
 
@@ -90,37 +90,37 @@ func GetNotes(c *gin.Context) {
 func UpdateNote(c *gin.Context) {
 	userId, ok := extractUserId(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		utils.RespondError(c, http.StatusUnauthorized, "User ID missing")
 		return
 	}
 
 	noteId := c.Param("id")
 	id, err := strconv.Atoi(noteId)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		utils.RespondError(c, http.StatusBadRequest, "Invalid note ID")
 		return
 	}
 
 	var existingNote models.Note
 	if err := config.DB.Where("id = ? AND user_id = ?", id, userId).First(&existingNote).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		utils.RespondError(c, http.StatusNotFound, "Note not found")
 		return
 	}
 
 	var updatedNote models.Note
 	if err := c.ShouldBindJSON(&updatedNote); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	encryptedTitle, err := utils.Encrypt(updatedNote.Title)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		utils.RespondError(c, http.StatusInternalServerError, "Encryption failed")
 		return
 	}
 	encryptedContent, err := utils.Encrypt(updatedNote.Content)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Encryption failed"})
+		utils.RespondError(c, http.StatusInternalServerError, "Encryption failed")
 		return
 	}
 
@@ -128,7 +128,7 @@ func UpdateNote(c *gin.Context) {
 	existingNote.Content = encryptedContent
 
 	if err := config.DB.Save(&existingNote).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.InternalError(c, err)
 		return
 	}
 
@@ -138,25 +138,25 @@ func UpdateNote(c *gin.Context) {
 func DeleteNote(c *gin.Context) {
 	userId, ok := extractUserId(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID missing"})
+		utils.RespondError(c, http.StatusUnauthorized, "User ID missing")
 		return
 	}
 
 	noteId := c.Param("id")
 	id, err := strconv.Atoi(noteId)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		utils.RespondError(c, http.StatusBadRequest, "Invalid note ID")
 		return
 	}
 
 	var note models.Note
 	if err := config.DB.Where("id = ? AND user_id = ?", id, userId).First(&note).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		utils.RespondError(c, http.StatusNotFound, "Note not found")
 		return
 	}
 
 	if err := config.DB.Delete(&note).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.InternalError(c, err)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"secure-notes-api/config"
 	"secure-notes-api/models"
+	"secure-notes-api/utils"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,19 +38,19 @@ func Register(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	hashedPassword, err := hashPassword(input.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Password hashing failed"})
+		utils.InternalError(c, err)
 		return
 	}
 
 	user := models.User{Username: input.Username, Password: hashedPassword}
 	if err := config.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.InternalError(c, err)
 		return
 	}
 
@@ -63,24 +64,24 @@ func Login(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var user models.User
 	if err := config.DB.Where("username = ?", input.Username).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		utils.RespondError(c, http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
 
 	if !checkPasswordHash(input.Password, user.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		utils.RespondError(c, http.StatusUnauthorized, "Invalid username or password")
 		return
 	}
 
 	token, err := generateToken(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token generation failed"})
+		utils.InternalError(c, err)
 		return
 	}
 

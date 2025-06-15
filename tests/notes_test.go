@@ -33,70 +33,57 @@ func TestFullWorkflow(t *testing.T) {
 	deleteNote(t, token, noteID)
 }
 
+// REGISTER and LOGIN
 func registerAndLogin(t *testing.T) string {
 	// REGISTER
 	registerBody := map[string]string{
 		"username": "testuser",
 		"password": "testpassword",
 	}
-	resp := performRequest(t, "POST", "/register", registerBody, "")
+	resp := performRequest(t, "POST", "/api/v1/register", registerBody, "")
 
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("Register failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusCreated, "Register failed")
 
 	// LOGIN
 	loginBody := map[string]string{
 		"username": "testuser",
 		"password": "testpassword",
 	}
-	resp = performRequest(t, "POST", "/login", loginBody, "")
+	resp = performRequest(t, "POST", "/api/v1/login", loginBody, "")
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("Login failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusOK, "Login failed")
 
 	var loginResp LoginResponse
-	err := json.Unmarshal(resp.Body.Bytes(), &loginResp)
-	if err != nil {
-		t.Fatalf("Failed to parse login response: %v", err)
-	}
+	decodeJSON(t, resp.Body.Bytes(), &loginResp)
 	log.Printf("[LOGIN] JWT Token: %s\n", loginResp.Token)
+
 	return loginResp.Token
 }
 
+// CREATE NOTE
 func createNote(t *testing.T, token string) uint {
 	noteBody := map[string]string{
 		"title":   "Encrypted Title",
 		"content": "Encrypted Content",
 	}
-	resp := performRequest(t, "POST", "/notes", noteBody, token)
+	resp := performRequest(t, "POST", "/api/v1/notes", noteBody, token)
 
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("Create note failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusCreated, "Create note failed")
 
 	var noteResp NoteResponse
-	err := json.Unmarshal(resp.Body.Bytes(), &noteResp)
-	if err != nil {
-		t.Fatalf("Failed to parse create note response: %v", err)
-	}
+	decodeJSON(t, resp.Body.Bytes(), &noteResp)
 	log.Printf("[CREATE_NOTE] Created Note ID: %d\n", noteResp.ID)
 	return noteResp.ID
 }
 
+// GET NOTES
 func getNotes(t *testing.T, token string) {
-	resp := performRequest(t, "GET", "/notes", nil, token)
+	resp := performRequest(t, "GET", "/api/v1/notes", nil, token)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("Get notes failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusOK, "Get notes failed")
 
 	var notes []NoteResponse
-	err := json.Unmarshal(resp.Body.Bytes(), &notes)
-	if err != nil {
-		t.Fatalf("Failed to parse notes response: %v", err)
-	}
+	decodeJSON(t, resp.Body.Bytes(), &notes)
 
 	if len(notes) != 1 {
 		t.Fatalf("Expected 1 note, got: %d", len(notes))
@@ -104,40 +91,44 @@ func getNotes(t *testing.T, token string) {
 	log.Printf("[GET_NOTES] Found Note ID: %d\n", notes[0].ID)
 }
 
+// UPDATE NOTE
 func updateNote(t *testing.T, token string, noteID uint) {
 	updateBody := map[string]string{
 		"title":   "Updated Title",
 		"content": "Updated Content",
 	}
-	resp := performRequest(t, "PUT", "/notes/"+uintToString(noteID), updateBody, token)
+	path := fmt.Sprintf("/api/v1/notes/%d", noteID)
+	resp := performRequest(t, "PUT", path, updateBody, token)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("Update note failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusOK, "Update note failed")
 	log.Println("[UPDATE_NOTE] Success")
 }
 
+// DELETE NOTE
 func deleteNote(t *testing.T, token string, noteID uint) {
-	resp := performRequest(t, "DELETE", "/notes/"+uintToString(noteID), nil, token)
+	path := fmt.Sprintf("/api/v1/notes/%d", noteID)
+	resp := performRequest(t, "DELETE", path, nil, token)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("Delete note failed: %d, %s", resp.Code, resp.Body.String())
-	}
+	assertStatus(t, resp, http.StatusOK, "Delete note failed")
 	log.Println("[DELETE_NOTE] Success")
 }
 
-// Helper functions
+// === Helper Functions ===
 
+// Perform API request
 func performRequest(t *testing.T, method, path string, body interface{}, token string) *httptest.ResponseRecorder {
 	var buf bytes.Buffer
 	if body != nil {
-		json.NewEncoder(&buf).Encode(body)
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatalf("Failed to encode body: %v", err)
+		}
 	}
 
 	req, err := http.NewRequest(method, path, &buf)
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -148,6 +139,16 @@ func performRequest(t *testing.T, method, path string, body interface{}, token s
 	return w
 }
 
-func uintToString(val uint) string {
-	return fmt.Sprintf("%d", val)
+// Assert HTTP status code
+func assertStatus(t *testing.T, resp *httptest.ResponseRecorder, expected int, message string) {
+	if resp.Code != expected {
+		t.Fatalf("%s: expected %d, got %d, body: %s", message, expected, resp.Code, resp.Body.String())
+	}
+}
+
+// Decode JSON response
+func decodeJSON(t *testing.T, data []byte, v interface{}) {
+	if err := json.Unmarshal(data, v); err != nil {
+		t.Fatalf("Failed to decode JSON: %v", err)
+	}
 }

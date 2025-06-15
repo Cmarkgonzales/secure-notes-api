@@ -19,34 +19,35 @@ func LoadEncryptionKey() {
 	if err != nil {
 		panic("Invalid ENCRYPTION_KEY: must be base64 encoded")
 	}
+	if len(key) != 32 {
+		panic("Encryption key must be 32 bytes for AES-256")
+	}
 	encryptionKey = key
-	fmt.Println("Encryption key length:", len(encryptionKey))
-
+	fmt.Println("Encryption key loaded successfully")
 }
 
-func Encrypt(text string) (string, error) {
+func Encrypt(plainText string) (string, error) {
 	block, err := aes.NewCipher(encryptionKey)
-	fmt.Println("Encrypting with key length:", len(encryptionKey))
 	if err != nil {
 		return "", err
 	}
 
-	plainText := []byte(text)
-	cipherText := make([]byte, aes.BlockSize+len(plainText))
-	iv := cipherText[:aes.BlockSize]
-
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
 		return "", err
 	}
 
-	stream := cipher.NewCFBEncrypter(block, iv)
-	stream.XORKeyStream(cipherText[aes.BlockSize:], plainText)
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
 
-	return base64.URLEncoding.EncodeToString(cipherText), nil
+	cipherText := gcm.Seal(nonce, nonce, []byte(plainText), nil)
+	return base64.StdEncoding.EncodeToString(cipherText), nil
 }
 
-func Decrypt(cryptoText string) (string, error) {
-	cipherText, err := base64.URLEncoding.DecodeString(cryptoText)
+func Decrypt(encoded string) (string, error) {
+	cipherText, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", err
 	}
@@ -56,15 +57,22 @@ func Decrypt(cryptoText string) (string, error) {
 		return "", err
 	}
 
-	if len(cipherText) < aes.BlockSize {
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	if len(cipherText) < gcm.NonceSize() {
 		return "", errors.New("cipherText too short")
 	}
 
-	iv := cipherText[:aes.BlockSize]
-	cipherText = cipherText[aes.BlockSize:]
+	nonce := cipherText[:gcm.NonceSize()]
+	cipherData := cipherText[gcm.NonceSize():]
 
-	stream := cipher.NewCFBDecrypter(block, iv)
-	stream.XORKeyStream(cipherText, cipherText)
+	plainText, err := gcm.Open(nil, nonce, cipherData, nil)
+	if err != nil {
+		return "", err
+	}
 
-	return string(cipherText), nil
+	return string(plainText), nil
 }
